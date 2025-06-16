@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Код-Мастер</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .game-container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .player-info {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #e9f7ef;
+            border-radius: 5px;
+        }
+        .game-board {
+            margin-top: 20px;
+        }
+        .guess-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            font-size: 16px;
+            flex-grow: 1;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .markers {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        .marker {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+        .black {
+            background-color: black;
+        }
+        .white {
+            background-color: white;
+            border: 1px solid #ccc;
+        }
+        .game-status {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e3f2fd;
+            border-radius: 5px;
+        }
+        .history {
+            margin-top: 20px;
+        }
+        .history-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>Код-Мастер</h1>
+        
+        <div class="player-info" id="playerInfo">
+            <h3>Введите имя игрока:</h3>
+            <div class="guess-input">
+                <input type="text" id="playerName" placeholder="Ваше имя">
+                <button id="joinButton">Присоединиться</button>
+            </div>
+        </div>
+        
+        <div class="game-board" id="gameBoard" style="display: none;">
+            <h2 id="playerTitle"></h2>
+            <div class="guess-input">
+                <input type="text" id="guessInput" placeholder="Введите ваш код" maxlength="4">
+                <button id="submitGuess">Отправить</button>
+            </div>
+            <div class="result" id="result"></div>
+            
+            <div class="game-status" id="gameStatus">
+                <h3>Статус игры</h3>
+                <p>Игроки: <span id="playersList"></span></p>
+                <p>Сейчас ходит: <span id="currentPlayer"></span></p>
+                <p>Ваши попытки: <span id="attemptsCount">0</span></p>
+            </div>
+            
+            <div class="history" id="history"></div>
+        </div>
+    </div>
+
+    <script>
+        let playerId = null;
+        let playerName = null;
+        let isMyTurn = false;
+        
+        document.getElementById('joinButton').addEventListener('click', joinGame);
+        document.getElementById('submitGuess').addEventListener('click', submitGuess);
+        
+        async function joinGame() {
+            const nameInput = document.getElementById('playerName');
+            const name = nameInput.value.trim();
+            
+            if (!name) {
+                alert('Пожалуйста, введите имя');
+                return;
+            }
+            
+            playerName = name;
+            
+            try {
+                const response = await fetch('/join', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: name }),
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    playerId = data.playerId;
+                    document.getElementById('playerInfo').style.display = 'none';
+                    document.getElementById('gameBoard').style.display = 'block';
+                    document.getElementById('playerTitle').textContent = `Игрок: ${name}`;
+                    
+                    // Start polling for game status
+                    setInterval(updateGameStatus, 2000);
+                } else {
+                    alert(data.error || 'Ошибка при присоединении к игре');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Ошибка соединения с сервером');
+            }
+        }
+        
+        async function submitGuess() {
+            const guessInput = document.getElementById('guessInput');
+            const guess = guessInput.value.trim();
+            
+            if (!guess || !/^\d+$/.test(guess)) {
+                alert('Пожалуйста, введите код из цифр');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/guess', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        playerId: playerId,
+                        guess: guess 
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayResult(guess, data);
+                    guessInput.value = '';
+                    updateGameStatus();
+                } else {
+                    alert(data.error || 'Ошибка при отправке догадки');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Ошибка соединения с сервером');
+            }
+        }
+        
+        function displayResult(guess, data) {
+            const resultDiv = document.getElementById('result');
+            const historyDiv = document.getElementById('history');
+            
+            let resultHTML = `<p>Ваша догадка: ${guess}</p>`;
+            
+            if (data.result === 'win') {
+                resultHTML += `<p style="color: green; font-weight: bold;">Поздравляем! Вы угадали код!</p>`;
+                document.getElementById('submitGuess').disabled = true;
+            }
+            
+            resultHTML += `<p>Результат:</p><div class="markers">`;
+            
+            // Add black markers
+            for (let i = 0; i < data.black; i++) {
+                resultHTML += `<div class="marker black"></div>`;
+            }
+            
+            // Add white markers
+            for (let i = 0; i < data.white; i++) {
+                resultHTML += `<div class="marker white"></div>`;
+            }
+            
+            resultHTML += `</div>`;
+            resultDiv.innerHTML = resultHTML;
+            
+            // Add to history
+            const historyItem = document.createElement('div');
+            historyItem.className = 'history-item';
+            historyItem.innerHTML = resultHTML;
+            historyDiv.prepend(historyItem);
+        }
+        
+        async function updateGameStatus() {
+            try {
+                const response = await fetch(`/status?playerId=${playerId}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('playersList').textContent = data.players.join(', ');
+                    document.getElementById('currentPlayer').textContent = data.currentTurn;
+                    document.getElementById('attemptsCount').textContent = data.attempts;
+                    
+                    // Enable/disable guess input based on turn
+                    isMyTurn = data.currentTurn === playerName;
+                    document.getElementById('submitGuess').disabled = !isMyTurn || data.gameFinished;
+                    
+                    if (data.gameFinished) {
+                        const statusDiv = document.getElementById('gameStatus');
+                        if (data.winner) {
+                            statusDiv.innerHTML += `<p style="color: green; font-weight: bold;">Победитель: ${data.winner}</p>`;
+                        } else {
+                            statusDiv.innerHTML += `<p style="color: red;">Игра окончена. Никто не угадал код.</p>`;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating game status:', error);
+            }
+        }
+    </script>
+</body>
+</html>
